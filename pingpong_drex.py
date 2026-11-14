@@ -55,7 +55,7 @@ import mujoco.viewer
 
 HOME_Z = 0.95            # racquet rest height (matches pingpong.xml)
 RACQUET_X = 1.5          # racquet home distance from table center (|x|)
-RESERVE_AFTER = 15.0     # seconds before forcing a re-serve
+RESERVE_AFTER = 15.0     # simulated seconds before forcing a re-serve
 MAX_BALL_SPEED = 8.0     # m/s safety cap
 GRAVITY = 9.81
 TABLE_Z = 0.76           # table surface height
@@ -435,6 +435,7 @@ class Game:
         self.last_dir = 0
         self.watch = None             # the return being followed for the shot log
         self.rolling_since = None     # sim time the ball started rolling on the table
+        self.serve_time = 0.0         # sim time of the latest serve
         self.too_fast_reported = False
 
     # -- serving / safety --
@@ -452,6 +453,7 @@ class Game:
         self.watch = None
         self.too_fast_reported = False
         self.rolling_since = None
+        self.serve_time = d.time
         mujoco.mj_forward(self.model, d)
 
     def reset_and_serve(self):
@@ -670,9 +672,52 @@ class Game:
         w["x"], w["z"], w["vz"] = x, z, vz
 
     # -- main loop --
+    def advance(self, steps):
+        """One frame of the game: ask/apply decisions, run `steps` physics steps, then the
+        safety checks and re-serves. Used by run() and by make_gif.py."""
+        with self.lock:
+            self.snapshot = self.make_snapshot()
+        self.control(-1)
+        self.control(+1)
+
+        for _ in range(steps):
+            self.drive_x()
+            mujoco.mj_step(self.model, self.data)
+            self.check_watch()
+        self.track_direction()
+
+        # safety checks on the ball
+        vel = self.data.qvel[self.bv:self.bv + 3]
+        speed = np.linalg.norm(vel)
+        if not np.isfinite(speed) or not np.all(np.isfinite(self.data.qpos)):
+            print("simulation went NaN, resetting")
+            self.reset_and_serve()
+            return
+        if speed > MAX_BALL_SPEED:
+            if not self.too_fast_reported:
+                print(f"ball too fast: {speed:.1f} m/s (capped at {MAX_BALL_SPEED})")
+                self.too_fast_reported = True
+            vel *= MAX_BALL_SPEED / speed
+
+        p = self.data.qpos[self.bq:self.bq + 3]
+        # A ball rolling along the table (resting on it, no vertical motion) is dead.
+        on_table = (p[2] < TABLE_Z + BALL_R + 0.005 and abs(vel[2]) < 0.1
+                    and abs(p[0]) < TABLE_HALF[0] and abs(p[1]) < TABLE_HALF[1])
+        if not on_table:
+            self.rolling_since = None
+        elif self.rolling_since is None:
+            self.rolling_since = self.data.time
+        rolling = on_table and self.data.time - self.rolling_since > 0.5
+        if (p[2] < 0.1 or abs(p[0]) > 2.5 or abs(p[1]) > 1.5 or rolling
+                or self.data.time - self.serve_time > RESERVE_AFTER):
+            if self.watch:
+                self.report("rolling on the table" if rolling else "out of play")
+            elif rolling and not self.args.quiet:
+                print("ball rolling on the table: new serve")
+            self.serve()
+
     def run(self):
         self.reset_and_serve()
-        last_serve = time.time()
         last_report = time.time()
         steps = max(1, int(round(self.args.sim_speed / 60 / self.model.opt.timestep)))
 
@@ -685,48 +730,7 @@ class Game:
 
             while viewer.is_running():
                 t0 = time.time()
-
-                with self.lock:
-                    self.snapshot = self.make_snapshot()
-                self.control(-1)
-                self.control(+1)
-
-                for _ in range(steps):
-                    self.drive_x()
-                    mujoco.mj_step(self.model, self.data)
-                    self.check_watch()
-                self.track_direction()
-
-                # safety checks on the ball
-                vel = self.data.qvel[self.bv:self.bv + 3]
-                speed = np.linalg.norm(vel)
-                if not np.isfinite(speed) or not np.all(np.isfinite(self.data.qpos)):
-                    print("simulation went NaN, resetting")
-                    self.reset_and_serve()
-                    last_serve = time.time()
-                elif speed > MAX_BALL_SPEED:
-                    if not self.too_fast_reported:
-                        print(f"ball too fast: {speed:.1f} m/s (capped at {MAX_BALL_SPEED})")
-                        self.too_fast_reported = True
-                    vel *= MAX_BALL_SPEED / speed
-
-                p = self.data.qpos[self.bq:self.bq + 3]
-                # A ball rolling along the table (resting on it, no vertical motion) is dead.
-                on_table = (p[2] < TABLE_Z + BALL_R + 0.005 and abs(vel[2]) < 0.1
-                            and abs(p[0]) < TABLE_HALF[0] and abs(p[1]) < TABLE_HALF[1])
-                if not on_table:
-                    self.rolling_since = None
-                elif self.rolling_since is None:
-                    self.rolling_since = self.data.time
-                rolling = on_table and self.data.time - self.rolling_since > 0.5
-                if (p[2] < 0.1 or abs(p[0]) > 2.5 or abs(p[1]) > 1.5 or rolling
-                        or time.time() - last_serve > RESERVE_AFTER):
-                    if self.watch:
-                        self.report("rolling on the table" if rolling else "out of play")
-                    elif rolling and not self.args.quiet:
-                        print("ball rolling on the table: new serve")
-                    self.serve()
-                    last_serve = time.time()
+                self.advance(steps)
 
                 if time.time() - last_report > 5.0:
                     s = self.stats

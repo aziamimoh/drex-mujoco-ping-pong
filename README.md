@@ -1,5 +1,7 @@
 # Drex MuJoCo Ping Pong
 
+![A rally in the simulation](pingpong.gif)
+
 Table tennis in [MuJoCo](https://mujoco.org/), with both racquets steered by a
 [Drex](https://www.nace.ai/) decision model: the hosted Nace API by default, or a local
 Drex server.
@@ -22,7 +24,7 @@ available, the racquet falls back to the prediction and a lift.
 ## Requirements
 
 - Python 3.10+
-- `pip install mujoco numpy`
+- `pip install mujoco numpy` (and `pillow` for `make_gif.py`)
 - For the hosted Drex API, a Nace API key
 
 ## Run
@@ -61,6 +63,7 @@ speed, and `--quiet`.
 | `pingpong.xml` | The scene: a regulation-size table, net, 40 mm / 2.7 g ball, and two racquets that swing (x), slide (y, z), turn (yaw), tilt and roll |
 | `pingpong_drex.py` | The game: Drex client, ball-flight prediction, stroke solver and racquet control |
 | `pingpong_controller.py` | The original simple controller (straight-line aiming, no model) |
+| `make_gif.py` | Renders a clip of the game straight from MuJoCo and saves it as an animated GIF (`python make_gif.py`, or `--drex` to steer with the hosted model) |
 | `stroke_test.py` | Headless test: fires balls at each racquet and compares the planned stroke with what MuJoCo does |
 | `bounce_test.py` | Headless test: measures ball bounce restitution for several contact settings |
 | `debug.py`, `test_simulation.py` | Small checks that the model loads and the ball bounces |
