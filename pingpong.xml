@@ -1,0 +1,86 @@
+<mujoco model="pingpong">
+  <option gravity="0 0 -9.81" timestep="0.0005" cone="elliptic"/>
+
+  <default>
+    <!-- solref 0.03 / 0.05: bounces keep ~86% of their speed (bounce_test.py). Stiffer settings
+         such as 0.004 / 0.08 made contacts too short for the 0.5 ms timestep and the ball
+         GAINED energy on every bounce. -->
+    <geom solref="0.03 0.05" solimp="0.95 0.99 0.001" condim="3" friction="0.3 0.005 0.0001"/>
+    <joint damping="2"/>
+  </default>
+
+  <worldbody>
+    <light pos="0 0 4" dir="0 0 -1"/>
+    <light pos="2 -2 3" dir="-1 1 -1"/>
+    <geom name="floor" type="plane" size="6 6 0.1" rgba="0.15 0.15 0.2 1"/>
+
+    <!-- Table: top surface at z = 0.76, 2.74 x 1.525 m -->
+    <geom name="table_top" type="box" pos="0 0 0.74" size="1.37 0.7625 0.02" rgba="0.1 0.35 0.2 1"/>
+    <!-- legs (visual only) -->
+    <geom type="box" pos="1.25 0.65 0.37"   size="0.03 0.03 0.37" rgba="0.3 0.3 0.3 1" contype="0" conaffinity="0"/>
+    <geom type="box" pos="1.25 -0.65 0.37"  size="0.03 0.03 0.37" rgba="0.3 0.3 0.3 1" contype="0" conaffinity="0"/>
+    <geom type="box" pos="-1.25 0.65 0.37"  size="0.03 0.03 0.37" rgba="0.3 0.3 0.3 1" contype="0" conaffinity="0"/>
+    <geom type="box" pos="-1.25 -0.65 0.37" size="0.03 0.03 0.37" rgba="0.3 0.3 0.3 1" contype="0" conaffinity="0"/>
+    <!-- center line (visual only) -->
+    <geom type="box" pos="0 0 0.7605" size="1.37 0.005 0.0005" rgba="1 1 1 1" contype="0" conaffinity="0"/>
+
+    <!-- Net: 15.25 cm tall -->
+    <geom name="net" type="box" pos="0 0 0.8375" size="0.005 0.9125 0.0775" rgba="0.9 0.9 0.9 0.6"/>
+
+    <!-- Ball: 40 mm, 2.7 g -->
+    <body name="ball" pos="-1.0 0 1.15">
+      <freejoint name="ball_free"/>
+      <geom name="ball_geom" type="sphere" size="0.02" mass="0.0027" rgba="1 0.6 0.1 1" contype="3" conaffinity="3"/>
+    </body>
+
+    <!-- Collision groups: table, net and floor use the default bit 1, racquets bit 2, the ball
+         both. So the ball hits everything, but a tilted racquet swinging close to the table
+         end passes through its edge instead of jamming on it. -->
+    <!-- Hinge ranges are in DEGREES (MuJoCo's default angle unit for XML attributes); joint
+         positions and ctrl values are radians. yaw +-35 deg (0.6 rad), tilt +-57 (1 rad),
+         roll +-69 (1.2 rad). -->
+    <!-- Left racquet: swings in x, slides in y and z, tilts about y, rolls about its face normal.
+         x range keeps the blade and handle clear of the table end (|x| = 1.37) on the follow-through.
+         Joint order matters: yaw (turn left/right), then tilt (open/close the face), then roll,
+         which comes last so it spins the blade about its own face normal (forehand/backhand
+         handle position) without changing where the face points. -->
+    <body name="left_racquet" pos="-1.5 0 0.95">
+      <joint name="left_x" type="slide" axis="1 0 0" range="-0.17 0.12" damping="0"/>
+      <joint name="left_y" type="slide" axis="0 1 0" range="-1 1"/>
+      <joint name="left_z" type="slide" axis="0 0 1" range="-0.2 0.4"/>
+      <joint name="left_yaw" type="hinge" axis="0 0 1" range="-35 35" damping="0.2"/>
+      <joint name="left_tilt" type="hinge" axis="0 1 0" range="-57 57" damping="0.2"/>
+      <joint name="left_roll" type="hinge" axis="1 0 0" range="-69 69" damping="0.2"/>
+      <geom name="left_blade" type="cylinder" size="0.12 0.008" euler="0 90 0" mass="0.2" rgba="0.8 0.1 0.1 1" contype="2" conaffinity="2"/>
+      <geom type="box" pos="0 0 -0.12" size="0.01 0.012 0.07" mass="0.05" rgba="0.5 0.3 0.1 1" contype="2" conaffinity="2"/>
+    </body>
+
+    <!-- Right racquet -->
+    <body name="right_racquet" pos="1.5 0 0.95">
+      <joint name="right_x" type="slide" axis="1 0 0" range="-0.12 0.17" damping="0"/>
+      <joint name="right_y" type="slide" axis="0 1 0" range="-1 1"/>
+      <joint name="right_z" type="slide" axis="0 0 1" range="-0.2 0.4"/>
+      <joint name="right_yaw" type="hinge" axis="0 0 1" range="-35 35" damping="0.2"/>
+      <joint name="right_tilt" type="hinge" axis="0 1 0" range="-57 57" damping="0.2"/>
+      <joint name="right_roll" type="hinge" axis="1 0 0" range="-69 69" damping="0.2"/>
+      <geom name="right_blade" type="cylinder" size="0.12 0.008" euler="0 90 0" mass="0.2" rgba="0.1 0.3 0.8 1" contype="2" conaffinity="2"/>
+      <geom type="box" pos="0 0 -0.12" size="0.01 0.012 0.07" mass="0.05" rgba="0.5 0.3 0.1 1" contype="2" conaffinity="2"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <!-- x is a velocity servo: the script feeds it the swing velocity plus a position correction -->
+    <velocity name="left_x_ctrl"     joint="left_x"     kv="60"/>
+    <position name="left_y_ctrl"     joint="left_y"     kp="800" kv="25"/>
+    <position name="left_z_ctrl"     joint="left_z"     kp="800" kv="25"/>
+    <position name="left_yaw_ctrl"  joint="left_yaw"  kp="20" kv="0.5"/>
+    <position name="left_tilt_ctrl"  joint="left_tilt"  kp="20"  kv="0.5"/>
+    <position name="left_roll_ctrl"  joint="left_roll"  kp="20"  kv="0.4"/>
+    <velocity name="right_x_ctrl"    joint="right_x"    kv="60"/>
+    <position name="right_y_ctrl"    joint="right_y"    kp="800" kv="25"/>
+    <position name="right_z_ctrl"    joint="right_z"    kp="800" kv="25"/>
+    <position name="right_yaw_ctrl"  joint="right_yaw"  kp="20" kv="0.5"/>
+    <position name="right_tilt_ctrl" joint="right_tilt" kp="20"  kv="0.5"/>
+    <position name="right_roll_ctrl" joint="right_roll" kp="20"  kv="0.4"/>
+  </actuator>
+</mujoco>

@@ -1,0 +1,12 @@
+# secrets
+api-key.txt
+*.key
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# screen recordings
+*.mp4
