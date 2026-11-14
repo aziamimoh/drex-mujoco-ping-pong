@@ -24,11 +24,11 @@ R = 0.02
 ZC = TABLE_TOP + R
 
 CANDIDATES = [            # (timestep, timeconst, dampratio)
-    (0.0005, 0.004, 0.08),    # current pingpong.xml
+    (0.0005, 0.004, 0.08),    # original setting: bounces GAIN energy at this timestep
     (0.0002, 0.004, 0.08),
     (0.0005, 0.010, 0.06),
     (0.0005, 0.020, 0.06),
-    (0.0005, 0.030, 0.05),
+    (0.0005, 0.030, 0.05),    # current pingpong.xml
     (0.0002, 0.010, 0.06),
     (0.0005, 0.020, 0.04),
 ]
